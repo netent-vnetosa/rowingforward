@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="x-ua-compatible" content="ie=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>О pydantic</title>
+        <link rel="stylesheet" href="../css/default.css" />
+        <link rel="stylesheet" href="../css/syntax.css" />
+    </head>
+    <body>
+        <header>
+            <nav>
+                <a href="../">Блуждающий форвард</a>
+            </nav>
+        </header>
+
+        <main role="main">
+            <article>
+    <h1>О pydantic</h1>
+    <section>
+        <p><a href="https://github.com/samuelcolvin/pydantic">Pydantic</a> — это прекрасный способ сериализации/десериализации данных в python. Однако, время от времени бывают ситуации, когда его функциональность хочется немножко расширить. Об одной из таких ситуаций поговорим сегодня.</p>
+<p>Часто случается, что один и тот же кусочек данных используется в приложении в разных местах и везде имеет немножко разное представление. Ну скажем, мы строим приложение для управления арендованной недвижимостью и для владельца, риелтора и арендатора отображается немножко разный набор данных о квартире:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> ElectricityContract(BaseModel):</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    contract_number: <span class="bu">str</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    debt: Decimal</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    messages: List[<span class="bu">str</span>]</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> ElectricityContractForTenant(BaseModel):</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    contract_number: <span class="bu">str</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    debt: Decimal</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> ApartmentForOwner(BaseModel):</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    address: <span class="bu">str</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    photos: List[HttpUrl]</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    documents: List[HttpUrl]</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    electricity_contract: ElectricityContract</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> ApartmentForRealtor(BaseModel):</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    address: <span class="bu">str</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    photos: List[HttpUrl]</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> ApartmentForTenant(BaseModel):</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    address: <span class="bu">str</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    documents: List[HttpUrl]</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    electricity_contract: ElectricityContractForTenant</span></code></pre></div>
+<p>У хозяина квартиры есть полная информация о квартире. У риелтора есть доступ лишь к адресу и фотографиям. У арендатора нет доступа к фотографиям — они ему не нужны, но есть доступ к документам на недвижимость и информации о контракте на электричество, причём у хозяина квартиры информация о контракте более полная — у него, в отличии от арендатора, есть доступ к сообщениям от поставщика энергии.</p>
+<p>Даже на этот максимально утрированный пример нам понадобилось пять датаклассов для описания всего двух сущностей! Конечно, можно попробовать сократить повторы в объявлении полей, но это не сильно спасёт ситуацию (а в определённых случаях только ухудшит).
+Мне захотелось сделать с этим что-то, и я сделал небольшую надстройку над pydantic, чтобы можно было записать наш пример вот так:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> ElectricityContract(BaseModel):</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    contract_number: <span class="bu">str</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    debt: Decimal</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    messages: List[<span class="bu">str</span>]</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> Config:</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>        projections <span class="op">=</span> {</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>            <span class="st">'tenant'</span>: (</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>              <span class="st">'contract_number'</span>, </span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>              <span class="st">'debt'</span>,</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>            ),</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Apartment(BaseModel):</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    address: <span class="bu">str</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    photos: List[HttpUrl]</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    documents: List[HttpUrl]</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    electricity_contract: ElectricityContract</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> Config:</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>        projections <span class="op">=</span> {</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>            <span class="st">'realtor'</span>: (</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>              <span class="st">'address'</span>, </span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>              <span class="st">'photos'</span>,</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>            ),</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>            <span class="st">'tenant'</span>: (</span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>              <span class="st">'address'</span>, </span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>              <span class="st">'documents'</span>, </span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>              (<span class="st">'electricity_contract'</span>, <span class="st">'tenant'</span>),</span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>            ),</span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>        }</span></code></pre></div>
+<p>По классу на сущность, на мой взгляд так значительно лучше. Пользоваться этим можно следующим образом:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Equal to AppartmentForTenant from the first example</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>Appartment[<span class="st">'tenant'</span>]</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Appartment instance in the 'tenant' projection</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>appartment <span class="op">=</span> Appartment(…)</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>appartment.projections[<span class="st">'tenant'</span>] </span></code></pre></div>
+<p>Идея вот в чём: модель pydantic — это обычный датакласс, он (притянуто за уши) описывает некоторое пространство значений, размерность которого — количество полей в модели. Мы можем взять проекцию этого пространства на пространство меньшей размерности (образовать новую модель с меньшим количеством полей) или взять проекцию какой-то точки (образовать из инстанса одной модели инстанс другой, с меньшим количеством полей).</p>
+<p>Кроме того, мы можем строить проекции в глубину: в случае если тип какого-то поля — это другая модель, мы, описывая проекцию модели, можем подменить тип этого поля проекцией его типа (в примере выше мы делаем это с полем <code>electricity_contract</code> в проекции <code>tenant</code> модели <code>Apartment</code>: изначально, его тип — <code>ElectricityContract</code>, но в проекции <code>tenant</code> он изменится на <code>ElectricityContract['tenant']</code>).</p>
+<p>Представим ещё одну утрированную ситуацию: в нашем приложении есть секции с дополнительными данными о квартире (скажем, данные о предыдущих владельцах, о долгах, о средних ценах в районе и о заведениях неподалёку). Каждая из этих секций доступна пользователю только тогда, когда он купил подписку на соответствующий тариф.
+Нам бы хотелось иметь всего одну модель с данными о квартире, а перечислять по проекции на каждую комбинацию из тарифов нам бы не хотелось. Как же быть?
+Вначале опишем нашу модель и опишем по проекции на каждую секцию:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Appartment(BaseModel):</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    address: <span class="bu">str</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    previous_owners: List[<span class="bu">str</span>]</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    debt_electricity: Decimal</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    debt_water: Decimal</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    average_price_on_street: Decimal</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    average_price_on_district: Decimal</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    bars_nearby: List[<span class="bu">str</span>]</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    restaurants_nearby: List[<span class="bu">str</span>]</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> Config:</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>        projections <span class="op">=</span> {</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>            <span class="st">'public'</span>: (<span class="st">'address'</span>,),</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>            <span class="st">'previous_owners_section'</span>: (<span class="st">'previous_owners'</span>,),</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>            <span class="st">'debts_section'</span>: (</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>                <span class="st">'debt_electricity'</span>, </span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>                <span class="st">'debt_water'</span>,</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>            ),</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>            <span class="st">'average_prices_section'</span>: (</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>                <span class="st">'average_price_on_street'</span>,</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>                <span class="st">'average_price_on_district'</span>,</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>             ),</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>            <span class="st">'nearby_section'</span>: (</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>                <span class="st">'bars_nearby'</span>, </span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>                <span class="st">'restaurants_nearby'</span>,</span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>            ),</span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>        }</span></code></pre></div>
+<p>Проекция модели — это, помимо всего прочего, что-то вроде <code>set</code>’а с полями. Определим пару операций над проекциями по аналогии с <code>set</code>’ами:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Intersection of projections: model with single field 'address'</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>Appartment <span class="op">&amp;</span> Appartment[<span class="st">'public'</span>]</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Union of projections: model with fields 'address' and 'previous_owners'</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>Appartment[<span class="st">'public'</span>] <span class="op">|</span> Appartment[<span class="st">'previous_owners_section'</span>]</span></code></pre></div>
+<p>У нас есть пересечение двух проекций (такая проекция, которая содержит в себе только общие поля обоих проекций) и их объединение (проекция, которая содержит поля первой и поля второй проекций вместе). Несложно замаппить тарифы на проекции с секциями и объединением сгенерировать нужную модель динамически:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> get_appartment_model(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>        paid_sections: List[<span class="bu">str</span>]) <span class="op">-&gt;</span> Type[BaseModel]:</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    sections_mapping <span class="op">=</span> {</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>        <span class="st">'previous_owners'</span> : <span class="st">'previous_owners_section'</span>,</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>        <span class="st">'debts'</span>: <span class="st">'debts_section'</span>,</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>        <span class="st">'average_prices'</span>: <span class="st">'average_prices_section'</span>,</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>        <span class="st">'nearby'</span>: <span class="st">'nearby_section'</span>,</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    projections <span class="op">=</span> [</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>        Appartment[sections_mapping[section]]</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> section <span class="kw">in</span> paid_sections</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    ]</span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="bu">reduce</span>(</span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>        <span class="kw">lambda</span> a, b: a <span class="op">|</span> b,</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>        projections,</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>        Appartment[<span class="st">'public'</span>]</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div>
+<p>Вот и всё, задача решена.</p>
+<p>Свою надстройку над pydantic я имплементировал ещё в начале 2019 года, а потом случился <a href="https://www.python.org/dev/peps/pep-0604/">PEP-604</a> и его внедрили в python 3.10, из-за чего пришлось отказаться от перегрузки операторов для операций над проекциями и записывать их немножко иначе — эту ситуацию я и имел в виду в посте про перегрузку <code>__or__</code> в метаклассе.</p>
+    </section>
+</article>
+
+        </main>
+    </body>
+</html>

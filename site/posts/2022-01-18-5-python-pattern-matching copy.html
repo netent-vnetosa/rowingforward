@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="x-ua-compatible" content="ie=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>О паттерн матчинге в python</title>
+        <link rel="stylesheet" href="../css/default.css" />
+        <link rel="stylesheet" href="../css/syntax.css" />
+    </head>
+    <body>
+        <header>
+            <nav>
+                <a href="../">Блуждающий форвард</a>
+            </nav>
+        </header>
+
+        <main role="main">
+            <article>
+    <h1>О паттерн матчинге в python</h1>
+    <section>
+        <p>В 3.10, помимо всего прочего, завезли паттерн матчинг. И вы об этом, конечно, слышали. А вы слышали про <code>functools</code>’овый <code>singledispatch</code> который доступен аж со времён 3.4 и реализует матчинг типов аргументов в функции? Выглядит это так:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>Recipient <span class="op">=</span> Email <span class="op">|</span> SmsNumber</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">@singledispatch</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> send_message(recipient: Recipient,  message: <span class="bu">str</span>):</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">raise</span> <span class="pp">NotImplementedError</span>()</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="at">@send_message.register</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> send_message_via_email(recipient: Email,  message: <span class="bu">str</span>):</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Send message via email by somehow</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="at">@send_message.register</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> send_message_via_sms(recipient: SmsNumber, message: <span class="bu">str</span>):</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Send message via sms by somehow</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>some_email <span class="op">=</span> Email(<span class="st">'some@email.com'</span>)</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>some_phone <span class="op">=</span> SmsNumber(<span class="st">'+123456789'</span>)</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>send_message(some_email, <span class="st">'message'</span>)</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>send_message(some_phone, <span class="st">'message'</span>)</span></code></pre></div>
+<p>Ну практически haskell, нет? Увы, нет, ведь в python значение — это не то же самое что и тип, поэтому и возможности заматчить по значению у нас в этом случае нет. Кроме того, важный аспект работы <code>singledispatch</code> в том, что он, ну… single. Матчинг происходит только по типу первого аргумента (но если сильно нужно, то для матчинга всех аргументов есть <a href="https://github.com/mrocklin/multipledispatch/">батарейка</a>). Тем не менее, я считаю, что <code>singledispatch</code>, при всех своих недостатках, здорово помогает организовать код лаконично и читаемо.</p>
+<p>А вот чего в python не завезли (по, в целом, понятным причинам) так это возможности запилить sync и async реализации функции под одним именем. И это печально.</p>
+    </section>
+</article>
+
+        </main>
+    </body>
+</html>

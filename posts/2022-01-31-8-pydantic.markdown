@@ -1,0 +1,155 @@
+---
+title: О pydantic
+---
+[Pydantic](https://github.com/samuelcolvin/pydantic) — это прекрасный способ сериализации/десериализации данных в python. Однако, время от времени бывают ситуации, когда его функциональность хочется немножко расширить. Об одной из таких ситуаций поговорим сегодня.
+
+Часто случается, что один и тот же кусочек данных используется в приложении в разных местах и везде имеет немножко разное представление. Ну скажем, мы строим приложение для управления арендованной недвижимостью и для владельца, риелтора и арендатора отображается немножко разный набор данных о квартире:
+
+```python
+class ElectricityContract(BaseModel):
+    contract_number: str
+    debt: Decimal
+    messages: List[str]
+
+class ElectricityContractForTenant(BaseModel):
+    contract_number: str
+    debt: Decimal
+
+class ApartmentForOwner(BaseModel):
+    address: str
+    photos: List[HttpUrl]
+    documents: List[HttpUrl]
+    electricity_contract: ElectricityContract
+
+class ApartmentForRealtor(BaseModel):
+    address: str
+    photos: List[HttpUrl]
+
+class ApartmentForTenant(BaseModel):
+    address: str
+    documents: List[HttpUrl]
+    electricity_contract: ElectricityContractForTenant
+```
+
+У хозяина квартиры есть полная информация о квартире. У риелтора есть доступ лишь к адресу и фотографиям. У арендатора нет доступа к фотографиям — они ему не нужны, но есть доступ к документам на недвижимость и информации о контракте на электричество, причём у хозяина квартиры информация о контракте более полная — у него, в отличии от арендатора, есть доступ к сообщениям от поставщика энергии.
+
+Даже на этот максимально утрированный пример нам понадобилось пять датаклассов для описания всего двух сущностей! Конечно, можно попробовать сократить повторы в объявлении полей, но это не сильно спасёт ситуацию (а в определённых случаях только ухудшит).
+Мне захотелось сделать с этим что-то, и я сделал небольшую надстройку над pydantic, чтобы можно было записать наш пример вот так:
+
+```python
+class ElectricityContract(BaseModel):
+    contract_number: str
+    debt: Decimal
+    messages: List[str]
+
+    class Config:
+        projections = {
+            'tenant': (
+              'contract_number', 
+              'debt',
+            ),
+        }
+
+class Apartment(BaseModel):
+    address: str
+    photos: List[HttpUrl]
+    documents: List[HttpUrl]
+    electricity_contract: ElectricityContract
+
+    class Config:
+        projections = {
+            'realtor': (
+              'address', 
+              'photos',
+            ),
+            'tenant': (
+              'address', 
+              'documents', 
+              ('electricity_contract', 'tenant'),
+            ),
+        }
+```
+
+По классу на сущность, на мой взгляд так значительно лучше. Пользоваться этим можно следующим образом:
+
+```python
+# Equal to AppartmentForTenant from the first example
+Appartment['tenant']
+
+# Appartment instance in the 'tenant' projection
+appartment = Appartment(…)
+appartment.projections['tenant'] 
+```
+
+Идея вот в чём: модель pydantic — это обычный датакласс, он (притянуто за уши) описывает некоторое пространство значений, размерность которого — количество полей в модели. Мы можем взять проекцию этого пространства на пространство меньшей размерности (образовать новую модель с меньшим количеством полей) или взять проекцию какой-то точки (образовать из инстанса одной модели инстанс другой, с меньшим количеством полей). 
+
+Кроме того, мы можем строить проекции в глубину: в случае если тип какого-то поля — это другая модель, мы, описывая проекцию модели, можем подменить тип этого поля проекцией его типа (в примере выше мы делаем это с полем `electricity_contract` в проекции `tenant` модели `Apartment`: изначально, его тип — `ElectricityContract`, но в проекции `tenant` он изменится на `ElectricityContract['tenant']`).
+
+Представим ещё одну утрированную ситуацию: в нашем приложении есть секции с дополнительными данными о квартире (скажем, данные о предыдущих владельцах, о долгах, о средних ценах в районе и о заведениях неподалёку). Каждая из этих секций доступна пользователю только тогда, когда он купил подписку на соответствующий тариф.
+Нам бы хотелось иметь всего одну модель с данными о квартире, а перечислять по проекции на каждую комбинацию из тарифов нам бы не хотелось. Как же быть?
+Вначале опишем нашу модель и опишем по проекции на каждую секцию:
+
+```python
+class Appartment(BaseModel):
+    address: str
+    previous_owners: List[str]
+    debt_electricity: Decimal
+    debt_water: Decimal
+    average_price_on_street: Decimal
+    average_price_on_district: Decimal
+    bars_nearby: List[str]
+    restaurants_nearby: List[str]
+
+    class Config:
+        projections = {
+            'public': ('address',),
+            'previous_owners_section': ('previous_owners',),
+            'debts_section': (
+                'debt_electricity', 
+                'debt_water',
+            ),
+            'average_prices_section': (
+                'average_price_on_street',
+                'average_price_on_district',
+             ),
+            'nearby_section': (
+                'bars_nearby', 
+                'restaurants_nearby',
+            ),
+        }
+```
+
+Проекция модели — это, помимо всего прочего, что-то вроде `set`’а с полями. Определим пару операций над проекциями по аналогии с `set`’ами:
+
+```python
+# Intersection of projections: model with single field 'address'
+Appartment & Appartment['public']
+# Union of projections: model with fields 'address' and 'previous_owners'
+Appartment['public'] | Appartment['previous_owners_section']
+```
+
+У нас есть пересечение двух проекций (такая проекция, которая содержит в себе только общие поля обоих проекций) и их объединение (проекция, которая содержит поля первой и поля второй проекций вместе). Несложно замаппить тарифы на проекции с секциями и объединением сгенерировать нужную модель динамически:
+
+```python
+def get_appartment_model(
+        paid_sections: List[str]) -> Type[BaseModel]:
+    sections_mapping = {
+        'previous_owners' : 'previous_owners_section',
+        'debts': 'debts_section',
+        'average_prices': 'average_prices_section',
+        'nearby': 'nearby_section',
+    }
+    projections = [
+        Appartment[sections_mapping[section]]
+        for section in paid_sections
+    ]
+    return reduce(
+        lambda a, b: a | b,
+        projections,
+        Appartment['public']
+    )
+```
+
+Вот и всё, задача решена.
+
+Свою надстройку над pydantic я имплементировал ещё в начале 2019 года, а потом случился [PEP-604](https://www.python.org/dev/peps/pep-0604/) и его внедрили в python 3.10, из-за чего пришлось отказаться от перегрузки операторов для операций над проекциями и записывать их немножко иначе — эту ситуацию я и имел в виду в посте про перегрузку `__or__` в метаклассе.
