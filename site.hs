@@ -21,7 +21,7 @@ pandocCompiler' =
 
 config :: Configuration
 config = defaultConfiguration
-  {destinationDirectory = "site"}
+  {destinationDirectory = "docs"}
 
 main :: IO ()
 main = hakyllWith config $ do
